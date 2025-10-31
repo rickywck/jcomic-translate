@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Screen Translate Extension</title>
+  <style>
+    body {
+      font-family: sans-serif;
+      width: 300px;
+      padding: 10px;
+    }
+    .command-button {
+      width: 100%;
+      padding: 10px;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      cursor: pointer;
+      margin-bottom: 5px; /* Add some space between buttons */
+    }
+    #result {
+      margin-top: 10px;
+      border: 1px solid #ccc;
+      padding: 10px;
+      min-height: 100px;
+      white-space: pre-wrap;
+      text-align: right;
+    }
+    #status {
+      margin-top: 10px;
+      color: blue;
+    }
+    #configSection {
+      display: none; /* Hidden by default */
+      margin-top: 10px;
+      padding: 10px;
+      border: 1px solid #eee;
+      background-color: #f9f9f9;
+    }
+    #api_key_input,
+    #image_prefix_input,
+    #jpeg_quality_input,
+    #color_threshold_input {
+      width: calc(100% - 22px); /* Adjust for padding and border */
+      padding: 8px;
+      margin-top: 5px;
+      margin-bottom: 10px;
+      border: 1px solid #ccc;
+    }
+    #saveApiKeyButton {
+      width: 100%;
+      padding: 8px;
+      background-color: #007bff;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+  </style>
+  <script type="module" src="popup.js"></script>
+</head>
+<body>
+  <h2>Screen Translate</h2>
+  <button id="translateButton" class="command-button">Translate Screen</button>
+  <button id="saveScreenshotButton" class="command-button">Save Screenshot</button>
+  <button id="configButton" class="command-button">Config</button>
+
+  <div id="configSection">
+    <h3>Gemini API Key Configuration</h3>
+    <label for="api_key_input">API Key:</label>
+    <input type="text" id="api_key_input" placeholder="Enter your Gemini API Key">
+
+    <h3>Image Filename Configuration</h3>
+    <label for="image_prefix_input">Base Name:</label>
+    <input type="text" id="image_prefix_input" placeholder="e.g., comic_page_ or capture">
+
+    <h3>JPEG Quality Configuration</h3>
+    <label for="jpeg_quality_input">Quality (0.1 - 1.0):</label>
+    <input type="number" id="jpeg_quality_input" min="0.1" max="1.0" step="0.1" value="0.5">
+
+    <h3>Color Threshold for Cropping</h3>
+    <label for="color_threshold_input">Threshold (0-255):</label>
+    <input type="number" id="color_threshold_input" min="0" max="255" step="1" value="60">
+
+    <button id="saveConfigButton">Save Configuration</button>
+  </div>
+
+  <div id="status"></div>
+  <div id="result"></div>
+</body>
+</html>
