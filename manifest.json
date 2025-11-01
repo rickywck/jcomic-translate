@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Screen Translate Extension",
-  "version": "1.0",
+  "version": "0.2",
   "description": "A Chrome extension that captures the current screen, translates text using Gemini Flash 2.5 LLM, and displays the result.",
   "action": {
     "default_popup": "popup.html"
@@ -9,7 +9,8 @@
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "downloads"
   ],
   "host_permissions": [
     "https://generativelanguage.googleapis.com/"

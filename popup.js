@@ -32,6 +32,64 @@ async function loadConfigIntoForm(apiKeyInput, imagePrefixInput, jpegQualityInpu
   console.log('Loading colorThreshold:', currentColorThreshold); // Debugging line
 }
 
+// Attempt to extract and parse a JSON array from the LLM's text output.
+// Handles optional Markdown code fences (```json ... ```), and trims extra text.
+function tryParseJsonArrayFromText(text) {
+  if (!text || typeof text !== 'string') return null;
+
+  let candidate = text.trim();
+
+  // Remove markdown code fences if present
+  const fenceMatch = candidate.match(/```(?:json)?\n([\s\S]*?)\n```/i);
+  if (fenceMatch && fenceMatch[1]) {
+    candidate = fenceMatch[1].trim();
+  }
+
+  // If not fenced, try to locate the first '[' and last ']'
+  if (!(candidate.trim().startsWith('[') && candidate.trim().endsWith(']'))) {
+    const start = candidate.indexOf('[');
+    const end = candidate.lastIndexOf(']');
+    if (start !== -1 && end !== -1 && end > start) {
+      candidate = candidate.slice(start, end + 1);
+    }
+  }
+
+  try {
+    const parsed = JSON.parse(candidate);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// Render an array of { original, translation } objects into the result container
+// as two rows per item with background colors.
+function renderTranslationRows(container, items) {
+  container.innerHTML = '';
+  const frag = document.createDocumentFragment();
+
+  items.forEach((it, idx) => {
+    const original = it && (it.original ?? it.Original ?? it.source ?? it.Source);
+    const translation = it && (it.translation ?? it.Translation ?? it.target ?? it.Target);
+
+    if (original != null) {
+      const rowOrig = document.createElement('div');
+      rowOrig.className = 'line-row line-original';
+      rowOrig.textContent = String(original);
+      frag.appendChild(rowOrig);
+    }
+
+    if (translation != null) {
+      const rowTrans = document.createElement('div');
+      rowTrans.className = 'line-row line-translation';
+      rowTrans.textContent = String(translation);
+      frag.appendChild(rowTrans);
+    }
+  });
+
+  container.appendChild(frag);
+}
+
 function cropBlackEdges(imageDataUrl, quality) {
   const MAX_PROCESSING_WIDTH = 1920; // Max width before we scale down for processing
 
@@ -145,6 +203,7 @@ async function captureAndProcessScreen() {
 document.addEventListener('DOMContentLoaded', async function() {
   const translateButton = document.getElementById('translateButton');
   const saveScreenshotButton = document.getElementById('saveScreenshotButton');
+  const captureBookButton = document.getElementById('captureBookButton');
   const configButton = document.getElementById('configButton');
   const configSection = document.getElementById('configSection');
   const apiKeyInput = document.getElementById('api_key_input');
@@ -163,6 +222,48 @@ document.addEventListener('DOMContentLoaded', async function() {
   currentImageBaseName = config.imageBaseName;
   currentJpegQuality = config.jpegQuality;
   currentColorThreshold = config.colorThreshold;
+
+  // Helper: sleep
+  const sleep = (ms) => new Promise(res => setTimeout(res, ms));
+
+  // Helper: get active tab id
+  async function getActiveTabId() {
+    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+    return tabs && tabs[0] ? tabs[0].id : null;
+  }
+
+  // Helper: simulate left arrow key in the page
+  async function simulateLeftArrow(tabId) {
+    if (!tabId) return;
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId },
+        func: () => {
+          try {
+            window.focus();
+            const target = document.activeElement || document.body || document.documentElement;
+            const fire = (type) => {
+              const e = new KeyboardEvent(type, {
+                key: 'ArrowLeft',
+                code: 'ArrowLeft',
+                keyCode: 37,
+                which: 37,
+                bubbles: true,
+                cancelable: true
+              });
+              target.dispatchEvent(e);
+            };
+            fire('keydown');
+            fire('keyup');
+          } catch (err) {
+            // no-op
+          }
+        }
+      });
+    } catch (e) {
+      console.warn('Failed to simulate left arrow:', e);
+    }
+  }
 
   translateButton.addEventListener('click', async function() {
     statusDiv.textContent = 'Capturing screen...';
@@ -215,9 +316,23 @@ document.addEventListener('DOMContentLoaded', async function() {
         return response.json();
       })
       .then(data => {
-        if (data.candidates && data.candidates.length > 0 && data.candidates[0].content && data.candidates[0].content.parts && data.candidates[0].content.parts.length > 0) {
-          resultDiv.textContent = data.candidates[0].content.parts[0].text;
-          statusDiv.textContent = 'Translation complete.';
+        if (
+          data.candidates &&
+          data.candidates.length > 0 &&
+          data.candidates[0].content &&
+          data.candidates[0].content.parts &&
+          data.candidates[0].content.parts.length > 0
+        ) {
+          const llmText = data.candidates[0].content.parts[0].text || '';
+          const arr = tryParseJsonArrayFromText(llmText);
+          if (arr && arr.length) {
+            renderTranslationRows(resultDiv, arr);
+            statusDiv.textContent = 'Translation complete.';
+          } else {
+            // Fallback: show raw text if JSON parsing failed
+            resultDiv.textContent = llmText || 'No translation found.';
+            statusDiv.textContent = arr ? 'No translation lines found.' : 'Displayed raw response (JSON parse failed).';
+          }
         } else {
           resultDiv.textContent = 'No translation found.';
           statusDiv.textContent = 'Gemini LLM response empty.';
@@ -248,6 +363,56 @@ document.addEventListener('DOMContentLoaded', async function() {
       document.body.removeChild(link);
 
       statusDiv.textContent = 'Screenshot saved.';
+  });
+
+  // Capture Book flow
+  captureBookButton.addEventListener('click', async function() {
+    // Ask user for total number of pages
+    let input = prompt('Enter number of pages to capture:', '5');
+    if (input === null) return; // user cancelled
+    let total = parseInt(input, 10);
+    if (isNaN(total) || total <= 0) {
+      statusDiv.textContent = 'Invalid number of pages.';
+      return;
+    }
+
+    const tabId = await getActiveTabId();
+    const NAVIGATION_DELAY_MS = 800; // wait after navigating before capturing again
+
+    statusDiv.textContent = `Starting capture for ${total} page(s)...`;
+
+    for (let i = 1; i <= total; i++) {
+      statusDiv.textContent = `Capturing page ${i} of ${total}...`;
+      const imgUrl = await captureAndProcessScreen();
+      if (!imgUrl) {
+        statusDiv.textContent = `Error: Could not capture page ${i}. Stopping.`;
+        break;
+      }
+
+      try {
+        // Save using chrome.downloads (requires downloads permission)
+        const filename = `${currentImageBaseName}${i}.jpeg`;
+        await chrome.downloads.download({ url: imgUrl, filename, saveAs: false });
+      } catch (e) {
+        // Fallback to anchor click if downloads fails for any reason
+        const link = document.createElement('a');
+        link.href = imgUrl;
+        link.download = `${currentImageBaseName}${i}.jpeg`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+      }
+
+      statusDiv.textContent = `Saved page ${i} of ${total}.`;
+
+      if (i < total) {
+        statusDiv.textContent = `Navigating to next page (${i + 1}/${total})...`;
+        await simulateLeftArrow(tabId);
+        await sleep(NAVIGATION_DELAY_MS);
+      }
+    }
+
+    statusDiv.textContent = 'Capture sequence completed.';
   });
 
   configButton.addEventListener('click', async function() {

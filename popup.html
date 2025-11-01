@@ -25,6 +25,22 @@
       white-space: pre-wrap;
       text-align: right;
     }
+    /* Row styles for original and translation lines */
+    .line-row {
+      padding: 6px 8px;
+      margin: 4px 0;
+      border-radius: 6px;
+    }
+    .line-original {
+      background-color: #f3f4f6; /* light grey */
+      color: #111827;
+      text-align: left; /* originals on the left */
+    }
+    .line-translation {
+      background-color: #ffe5e5; /* light red */
+      color: #111827;
+      text-align: right; /* translations on the right */
+    }
     #status {
       margin-top: 10px;
       color: blue;
@@ -61,6 +77,7 @@
   <h2>Screen Translate</h2>
   <button id="translateButton" class="command-button">Translate Screen</button>
   <button id="saveScreenshotButton" class="command-button">Save Screenshot</button>
+  <button id="captureBookButton" class="command-button">Capture Book</button>
   <button id="configButton" class="command-button">Config</button>
 
   <div id="configSection">
