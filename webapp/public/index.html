@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>JComic Translate Web</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="container">
+      <h1>JComic Translate (Web)</h1>
+
+      <section class="controls">
+        <label>
+          Directory path
+          <input id="dirInput" type="text" placeholder="/Users/you/path/to/images" />
+        </label>
+        <label>
+          Or pick a local folder (browser will upload images to the server)
+          <input id="dirPicker" type="file" webkitdirectory directory multiple />
+        </label>
+        <label>
+          Gemini API Key (optional if set on server)
+          <input id="apiKeyInput" type="password" placeholder="AIza..." />
+        </label>
+        <div class="row">
+          <button id="translateBtn">Scan and translate directory</button>
+          <label class="checkbox"><input id="overwriteChk" type="checkbox" /> Overwrite existing .txt</label>
+          <button id="uploadBtn">Upload & Translate Selected Folder</button>
+        </div>
+        <div id="status" class="status"></div>
+      </section>
+
+      <section class="viewer">
+        <div class="viewer-header">
+          <button id="loadBtn">Load viewer</button>
+          <span id="counter"></span>
+          <span class="hint">Use ← and → to navigate</span>
+        </div>
+        <div class="viewer-body">
+          <div class="image-pane"><img id="img" alt="image" /></div>
+          <div class="text-pane">
+            <div id="translated"></div>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <script type="module" src="/config.js"></script>
+    <script type="module" src="/app.js"></script>
+  </body>
+  </html>
