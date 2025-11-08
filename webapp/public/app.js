@@ -20,6 +20,23 @@ if (textPaneEl && !textPaneEl.hasAttribute('tabindex')) {
 let files = [];
 let index = 0;
 
+// Compute common path prefix (by path segments) for an array of relative paths
+function commonPathPrefix(paths) {
+  if (!paths || !paths.length) return '';
+  const splitPaths = paths.map(p => (p || '').split('/'));
+  const first = splitPaths[0];
+  let prefixLen = first.length;
+  for (let i = 1; i < splitPaths.length; i++) {
+    const cur = splitPaths[i];
+    prefixLen = Math.min(prefixLen, cur.length);
+    for (let j = 0; j < prefixLen; j++) {
+      if (first[j] !== cur[j]) { prefixLen = j; break; }
+    }
+  }
+  if (prefixLen === 0) return '';
+  return first.slice(0, prefixLen).join('/');
+}
+
 function saveLocal() {
   localStorage.setItem('jct.dir', dirInput.value || '');
   localStorage.setItem('jct.key', apiKeyInput.value || '');
@@ -244,3 +261,47 @@ document.addEventListener('keydown', (e) => {
 });
 
 loadLocal();
+
+// When user selects a local folder via the file input, update the directory input
+// but do NOT upload anything. The input does not expose absolute filesystem
+// paths in the browser. Update only the sub-directory portion of `dirInput`
+// so any user-provided prefix (absolute path) is preserved.
+function updateDirWithSubdir(current, sub) {
+  if (!current) return sub;
+  if (current.startsWith('local:')) return `local:${sub}`;
+  // Find last path separator (handle both / and \)
+  const lastSlashIdx = Math.max(current.lastIndexOf('/'), current.lastIndexOf('\\'));
+  if (lastSlashIdx >= 0) {
+    const sepChar = current[lastSlashIdx] === '\\' ? '\\' : '/';
+    let prefix = current.slice(0, lastSlashIdx);
+    // If prefix is empty but input started with a leading slash, keep it
+    if (prefix === '' && current.startsWith('/')) prefix = '/';
+    // Construct new path carefully to avoid duplicated separators
+    if (prefix === '/') return '/' + sub;
+    if (prefix.endsWith('/') || prefix.endsWith('\\')) return prefix + sub;
+    return prefix + sepChar + sub;
+  }
+  // No separator found - append with slash
+  return `${current}/${sub}`;
+}
+
+dirPicker.addEventListener('change', () => {
+  const picked = Array.from(dirPicker.files || []);
+  if (!picked.length) {
+    statusDiv.textContent = 'No folder selected.';
+    return;
+  }
+  // Prefer webkitRelativePath when available, otherwise fallback to file names.
+  const paths = picked.map(f => f.webkitRelativePath || f.name || '');
+  const prefix = commonPathPrefix(paths);
+  // selectedSub is the first path segment (the chosen folder name)
+  let selectedSub = '';
+  if (prefix && prefix.includes('/')) selectedSub = prefix.split('/')[0];
+  else if (paths[0]) selectedSub = (paths[0].split('/')[0] || paths[0]);
+  selectedSub = selectedSub || ('local_' + Date.now());
+
+  const current = (dirInput.value || '').trim();
+  const newVal = updateDirWithSubdir(current, selectedSub);
+  dirInput.value = newVal;
+  statusDiv.textContent = `Selected folder (${picked.length} files). Directory path updated (sub-directory set to '${selectedSub}'). Click 'Upload & Translate Selected Folder' to upload.`;
+});

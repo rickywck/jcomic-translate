@@ -4,19 +4,21 @@ let currentGeminiApiKey = '';
 let currentImageBaseName = '';
 let currentJpegQuality = 0.5; // Default JPEG quality
 let currentColorThreshold = 60; // Default color threshold
+let currentSaveTranslation = false; // Default: do not auto-save translated text
 
 async function getGeminiApiKey() {
   const { geminiApiKey } = await chrome.storage.local.get('geminiApiKey');
   return geminiApiKey;
 }
 
-async function loadConfigIntoForm(apiKeyInput, imagePrefixInput, jpegQualityInput, colorThresholdInput) {
+async function loadConfigIntoForm(apiKeyInput, imagePrefixInput, jpegQualityInput, colorThresholdInput, saveTranslationInput) {
   // Fetch all config values in a single, more efficient call
   const config = await chrome.storage.local.get({
     geminiApiKey: '',
     imageBaseName: 'capture',
     jpegQuality: 0.5,
-    colorThreshold: 60
+    colorThreshold: 60,
+    saveTranslation: false
   });
 
   // Update global state from the loaded config
@@ -24,11 +26,13 @@ async function loadConfigIntoForm(apiKeyInput, imagePrefixInput, jpegQualityInpu
   currentImageBaseName = config.imageBaseName;
   currentJpegQuality = config.jpegQuality;
   currentColorThreshold = config.colorThreshold;
+  currentSaveTranslation = Boolean(config.saveTranslation);
 
   apiKeyInput.value = config.geminiApiKey; // Show the stored key, which might be empty
   imagePrefixInput.value = currentImageBaseName;
   jpegQualityInput.value = currentJpegQuality;
   colorThresholdInput.value = currentColorThreshold;
+  if (saveTranslationInput) saveTranslationInput.checked = currentSaveTranslation;
   console.log('Loading colorThreshold:', currentColorThreshold); // Debugging line
 }
 
@@ -88,6 +92,33 @@ function renderTranslationRows(container, items) {
   });
 
   container.appendChild(frag);
+}
+
+// Save translated text to translated.txt using chrome.downloads (requires downloads permission)
+function saveTranslatedText(rawText, parsedArray) {
+  try {
+    const content = (parsedArray && parsedArray.length) ? JSON.stringify(parsedArray, null, 2) : String(rawText || '');
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    // Use chrome.downloads to save without prompting (manifest has downloads permission)
+    if (typeof chrome !== 'undefined' && chrome.downloads && chrome.downloads.download) {
+      chrome.downloads.download({ url, filename: 'translated.txt', saveAs: false }, () => {
+        // Revoke the object URL after a short delay
+        setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 5000);
+      });
+    } else {
+      // Fallback: anchor click
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'translated.txt';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 5000);
+    }
+  } catch (e) {
+    console.error('Failed to save translated text:', e);
+  }
 }
 
 function cropBlackEdges(imageDataUrl, quality) {
@@ -210,18 +241,21 @@ document.addEventListener('DOMContentLoaded', async function() {
   const imagePrefixInput = document.getElementById('image_prefix_input');
   const jpegQualityInput = document.getElementById('jpeg_quality_input');
   const colorThresholdInput = document.getElementById('color_threshold_input');
+  const saveTranslationCheckbox = document.getElementById('save_translation_checkbox');
   const saveConfigButton = document.getElementById('saveConfigButton');
   const resultDiv = document.getElementById('result');
   const statusDiv = document.getElementById('status');
 
-  // Load all configuration settings once on startup
+  // Load all configuration settings once on startup (include saveTranslation)
   const config = await chrome.storage.local.get({
-    geminiApiKey: '', imageBaseName: 'capture', jpegQuality: 0.5, colorThreshold: 60
+    geminiApiKey: '', imageBaseName: 'capture', jpegQuality: 0.5, colorThreshold: 60, saveTranslation: false
   });
   currentGeminiApiKey = config.geminiApiKey;
   currentImageBaseName = config.imageBaseName;
   currentJpegQuality = config.jpegQuality;
   currentColorThreshold = config.colorThreshold;
+  currentSaveTranslation = Boolean(config.saveTranslation);
+  if (saveTranslationCheckbox) saveTranslationCheckbox.checked = currentSaveTranslation;
 
   // Helper: sleep
   const sleep = (ms) => new Promise(res => setTimeout(res, ms));
@@ -327,10 +361,18 @@ document.addEventListener('DOMContentLoaded', async function() {
           const arr = tryParseJsonArrayFromText(llmText);
           if (arr && arr.length) {
             renderTranslationRows(resultDiv, arr);
+            // Save parsed translation JSON to file if user enabled it
+            if (currentSaveTranslation) {
+              try { saveTranslatedText(llmText, arr); } catch (e) { console.error(e); }
+            }
             statusDiv.textContent = 'Translation complete.';
           } else {
             // Fallback: show raw text if JSON parsing failed
             resultDiv.textContent = llmText || 'No translation found.';
+            // Save raw LLM output to file as fallback if user enabled it
+            if (currentSaveTranslation) {
+              try { saveTranslatedText(llmText, null); } catch (e) { console.error(e); }
+            }
             statusDiv.textContent = arr ? 'No translation lines found.' : 'Displayed raw response (JSON parse failed).';
           }
         } else {
@@ -419,7 +461,7 @@ document.addEventListener('DOMContentLoaded', async function() {
     if (configSection.style.display === 'block') {
       configSection.style.display = 'none';
     } else {
-      await loadConfigIntoForm(apiKeyInput, imagePrefixInput, jpegQualityInput, colorThresholdInput);
+      await loadConfigIntoForm(apiKeyInput, imagePrefixInput, jpegQualityInput, colorThresholdInput, saveTranslationCheckbox);
       configSection.style.display = 'block';
     }
   });
@@ -429,13 +471,16 @@ document.addEventListener('DOMContentLoaded', async function() {
     const newImageBaseName = imagePrefixInput.value;
     const newJpegQuality = parseFloat(jpegQualityInput.value);
     const newColorThreshold = parseInt(colorThresholdInput.value); // Get the new color threshold value
+    const newSaveTranslation = !!(saveTranslationCheckbox && saveTranslationCheckbox.checked);
 
-    chrome.storage.local.set({ 'geminiApiKey': newApiKey, 'imageBaseName': newImageBaseName, 'jpegQuality': newJpegQuality, 'colorThreshold': newColorThreshold }, function() {
+    chrome.storage.local.set({ 'geminiApiKey': newApiKey, 'imageBaseName': newImageBaseName, 'jpegQuality': newJpegQuality, 'colorThreshold': newColorThreshold, 'saveTranslation': newSaveTranslation }, function() {
       console.log('Saving colorThreshold:', newColorThreshold); // Debugging line
       currentGeminiApiKey = newApiKey;
       currentImageBaseName = newImageBaseName;
       currentJpegQuality = newJpegQuality;
       currentColorThreshold = newColorThreshold; // Update currentColorThreshold
+      currentSaveTranslation = newSaveTranslation;
+      console.log('Saving saveTranslation:', currentSaveTranslation);
       statusDiv.textContent = 'Configuration saved!';
       configSection.style.display = 'none';
       // Clear status after a short delay
