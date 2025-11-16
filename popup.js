@@ -6,6 +6,10 @@ let currentJpegQuality = 0.5; // Default JPEG quality
 let currentColorThreshold = 60; // Default color threshold
 let currentSaveTranslation = false; // Default: do not auto-save translated text
 
+/*
+  This is a Chrome extension to capture comic book pages from the browser.
+*/
+
 async function getGeminiApiKey() {
   const { geminiApiKey } = await chrome.storage.local.get('geminiApiKey');
   return geminiApiKey;
